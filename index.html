@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线PDF展示</title>
+    <!-- 引入PDF.js核心库 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <style>
+        /* 基础样式 */
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+
+        /* 容器样式 */
+        #pdf_container {
+            width: 90%;
+            margin: 20px auto;
+            padding: 20px;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 单列布局 */
+        .pdf_layout_single {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 20px;
+        }
+
+        /* 双列布局 */
+        .pdf_layout_double {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            justify-items: center;
+        }
+
+        /* PDF页面样式 */
+        .pdf_page {
+            margin-bottom: 20px;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            border-radius: 4px;
+            overflow: hidden;
+            background: white;
+            max-width: 100%;
+            height: auto;
+        }
+
+        /* PDF文件分隔线 */
+        .pdf_separator {
+            height: 2px;
+            background: #eee;
+            margin: 30px 0;
+            position: relative;
+            width: 100%;
+            grid-column: 1 / -1;
+            /* 分隔线横跨所有列 */
+        }
+
+        .pdf_separator::after {
+            content: attr(data-filename);
+            position: absolute;
+            left: 50%;
+            top: -10px;
+            transform: translateX(-50%);
+            background: #fff;
+            padding: 0 10px;
+            font-size: 12px;
+            color: #666;
+        }
+
+        .pdf_separator.error::after {
+            content: attr(data-filename) " 加载失败";
+            color: #ff4444;
+        }
+
+        /* 控制区样式 */
+        .controls {
+            width: 90%;
+            margin: 20px auto;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 上传文件区域样式 */
+        .file_upload_area {
+            position: relative;
+            display: inline-block;
+            padding: 4px 16px;
+            background: #f8f9fa;
+            border: 2px dashed #ced4da;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+            min-width: 120px;
+        }
+
+        .file_upload_area:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+        }
+
+        .file_upload_area.drag_over {
+            background: #e7f3ff;
+            border-color: #007bff;
+            color: #007bff;
+        }
+
+        .file_upload_area input {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        #load_default_btn {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        #load_default_btn:hover {
+            background: #0056b3;
+        }
+
+        #status {
+            color: #666;
+            font-size: 14px;
+            min-width: 200px;
+        }
+
+        .error {
+            color: #ff4444 !important;
+        }
+
+        /* 右上角切换按钮样式 */
+        .switch_container {
+            position: fixed;
+            top: 90px;
+            right: 32px;
+            z-index: 1000;
+        }
+
+        #switch_btn {
+            padding: 8px 16px;
+            background: #28a745;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            transition: background 0.3s;
+        }
+
+        #switch_btn:hover {
+            background: #218838;
+        }
+
+        /* 下拉菜单样式 */
+        .dropdown {
+            display: none;
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            min-width: 250px;
+            max-width: 500px;
+            max-height: 400px;
+            overflow-y: auto;
+            z-index: 1001;
+        }
+
+        .dropdown.show {
+            display: block;
+        }
+
+        .dropdown_item {
+            padding: 10px 15px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .dropdown_item:last-child {
+            border-bottom: none;
+        }
+
+        .dropdown_item:hover {
+            background-color: #f8f9fa;
+        }
+
+        .file_name {
+            flex: 1;
+            cursor: pointer;
+            padding: 5px 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 350px;
+        }
+
+        .delete_btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: background 0.3s;
+            flex-shrink: 0;
+            margin-left: 10px;
+        }
+
+        .delete_btn:hover {
+            background: #c82333;
+        }
+
+        .active_file {
+            background-color: #6b6eff;
+            color: #fff;
+        }
+
+        /* 布局控制样式 */
+        .layout_controls {
+            display: flex;
+            gap: 10px;
+            margin-left: auto;
+        }
+
+        .layout_btn {
+            padding: 8px 16px;
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .layout_btn.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+
+        .layout_btn:hover {
+            background: #e9ecef;
+        }
+
+        .layout_btn.active:hover {
+            background: #0056b3;
+        }
+
+        /* 响应式设计 */
+        @media (max-width: 768px) {
+            .pdf_layout_double {
+                grid-template-columns: 1fr;
+            }
+
+            .controls {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .layout_controls {
+                margin-left: 0;
+                margin-top: 10px;
+            }
+
+            .file_name {
+                max-width: 200px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 右上角切换按钮 -->
+    <div class="switch_container">
+        <button id="switch_btn">切换文件</button>
+        <div class="dropdown" id="file_dropdown">
+            <!-- 文件列表将在这里动态生成 -->
+        </div>
+    </div>
+
+    <div class="controls">
+        <button id="load_default_btn">加载默认PDF文件</button>
+
+        <!-- 上传文件区域 -->
+        <div class="file_upload_area" id="file_upload_area">
+            <span>上传文件</span>
+            <input type="file" id="file_input" accept=".pdf" multiple />
+        </div>
+
+        <span id="status">请点击"加载默认PDF文件"或上传PDF</span>
+
+        <!-- 布局控制 -->
+        <div class="layout_controls">
+            <button class="layout_btn active" id="single_layout_btn">一行一页</button>
+            <button class="layout_btn" id="double_layout_btn">一行两页</button>
+        </div>
+    </div>
+
+    <div id="pdf_container" class="pdf_layout_single"></div>
+
+    <script>
+        // DOM元素
+        const file_input = document.getElementById('file_input');
+        const file_upload_area = document.getElementById('file_upload_area');
+        const pdf_container = document.getElementById('pdf_container');
+        const status = document.getElementById('status');
+        const load_default_btn = document.getElementById('load_default_btn');
+        const switch_btn = document.getElementById('switch_btn');
+        const file_dropdown = document.getElementById('file_dropdown');
+        const single_layout_btn = document.getElementById('single_layout_btn');
+        const double_layout_btn = document.getElementById('double_layout_btn');
+
+        // 核心控制变量：初始化后是否自动加载默认PDF列表（true=自动加载，false=手动触发）
+        const auto_load_default_pdfs = true; // 可修改为false关闭自动加载
+
+        // 默认加载的PDF文件列表（按顺序）
+        const PDF_FRONT = "./assets/";
+        const DEFAULT_PDF_LIST = [
+            '陈本奇-软件测试-13402590968_v1.0.pdf',
+            '陈本奇-软件测试-13402590968_v1.1.pdf',
+            '陈本奇-软件测试-13402590968_v2.0.pdf',
+            '陈本奇-软件测试-13402590968_v2.1.0.pdf',
+            '陈本奇-软件测试-13402590968_v2.1.1.pdf',
+            '陈本奇-软件测试-13402590968_v2.1.2.pdf',
+            '陈本奇-软件测试-13402590968_v2.2.pdf',
+            '陈本奇-软件测试-13402590968_v3.0.pdf',
+            '陈本奇-软件测试-13402590968_v3.1.pdf',
+            // '3.pdf'
+        ];
+
+        // 存储已加载的PDF文件信息
+        const loaded_pdfs = [];
+        let current_pdf_index = -1;
+        let current_layout = 'single'; // 'single' 或 'double'
+
+        // 页面初始化逻辑
+        window.addEventListener('DOMContentLoaded', () => {
+            // 设置布局控制按钮事件
+            setupLayoutControls();
+
+            // 设置文件拖放事件
+            setupFileDragDrop();
+
+            // 根据控制变量决定是否自动加载
+            if (auto_load_default_pdfs) {
+                updateStatus('初始化中，准备自动加载默认PDF...');
+                // 延迟100ms执行，避免页面未完全就绪
+                setTimeout(() => loadDefaultPdfs(), 100);
+            } else {
+                updateStatus('请点击"加载默认PDF文件"或上传PDF');
+            }
+        });
+
+        // 设置文件拖放事件
+        function setupFileDragDrop() {
+            // 拖拽进入区域
+            file_upload_area.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                file_upload_area.classList.add('drag_over');
+                file_upload_area.querySelector('span').textContent = '释放文件以上传';
+            });
+
+            // 拖拽离开区域
+            file_upload_area.addEventListener('dragleave', (e) => {
+                e.preventDefault();
+                file_upload_area.classList.remove('drag_over');
+                file_upload_area.querySelector('span').textContent = '上传文件';
+            });
+
+            // 放置文件
+            file_upload_area.addEventListener('drop', (e) => {
+                e.preventDefault();
+                file_upload_area.classList.remove('drag_over');
+                file_upload_area.querySelector('span').textContent = '上传文件';
+
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    handleFileUpload(files);
+                }
+            });
+        }
+
+        // 设置布局控制
+        function setupLayoutControls() {
+            single_layout_btn.addEventListener('click', () => {
+                setLayout('single');
+            });
+
+            double_layout_btn.addEventListener('click', () => {
+                setLayout('double');
+            });
+        }
+
+        // 设置布局
+        function setLayout(layout) {
+            current_layout = layout;
+
+            // 更新按钮状态
+            single_layout_btn.classList.toggle('active', layout === 'single');
+            double_layout_btn.classList.toggle('active', layout === 'double');
+
+            // 更新容器布局类
+            pdf_container.className = layout === 'single' ? 'pdf_layout_single' : 'pdf_layout_double';
+
+            // 重新渲染当前PDF（如果有）
+            if (current_pdf_index >= 0) {
+                switchToPdf(current_pdf_index);
+            }
+        }
+
+        // 切换按钮点击事件
+        switch_btn.addEventListener('click', () => {
+            file_dropdown.classList.toggle('show');
+        });
+
+        // 点击页面其他地方关闭下拉菜单
+        document.addEventListener('click', (e) => {
+            if (!switch_btn.contains(e.target) && !file_dropdown.contains(e.target)) {
+                file_dropdown.classList.remove('show');
+            }
+        });
+
+        // 加载默认PDF列表（封装为独立函数）
+        async function loadDefaultPdfs() {
+            pdf_container.innerHTML = '';
+            updateStatus('正在加载默认PDF文件...');
+            try {
+                for (const pdfName of DEFAULT_PDF_LIST) {
+                    await loadAndRenderPdfFromUrl(pdfName);
+                }
+                updateStatus(`已完成加载 ${DEFAULT_PDF_LIST.length} 个默认PDF文件`);
+
+                // 默认加载后显示第一个PDF
+                if (loaded_pdfs.length > 0) {
+                    switchToPdf(0);
+                }
+            } catch (err) {
+                console.error('默认PDF加载失败：', err);
+                updateStatus(`加载失败：${err.message}`, true);
+            }
+        }
+
+        // 绑定"加载默认PDF"按钮事件
+        load_default_btn.addEventListener('click', loadDefaultPdfs);
+
+        // 上传PDF事件
+        file_input.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            handleFileUpload(files);
+        });
+
+        // 处理文件上传
+        async function handleFileUpload(files) {
+            updateStatus(`正在加载 ${files.length} 个上传文件...`);
+
+            // 清空当前显示
+            pdf_container.innerHTML = '';
+
+            try {
+                for (const file of files) {
+                    await loadAndRenderPdfFromFile(file);
+                }
+                updateStatus(`已完成加载 ${files.length} 个上传文件`);
+                file_input.value = '';
+
+                // 上传后显示最后一个PDF
+                if (loaded_pdfs.length > 0) {
+                    switchToPdf(loaded_pdfs.length - 1);
+                }
+            } catch (err) {
+                console.error('上传PDF加载失败：', err);
+                updateStatus(`加载失败：${err.message}`, true);
+            }
+        }
+
+        // 从URL加载并渲染单个PDF
+        async function loadAndRenderPdfFromUrl(pdfUrl) {
+            const separator = addPdfSeparator(pdfUrl);
+
+            try {
+                const response = await fetch(PDF_FRONT + pdfUrl);
+                if (!response.ok) {
+                    throw new Error(`文件 ${pdfUrl} 不存在或加载失败`);
+                }
+                const arrayBuffer = await response.arrayBuffer();
+
+                // 存储PDF信息 - 保存ArrayBuffer的副本
+                const pdfInfo = {
+                    name: pdfUrl,
+                    arrayBuffer: arrayBuffer.slice(0), // 创建ArrayBuffer的副本
+                    numPages: 0,
+                    separator: separator,
+                    pdfDoc: null // 存储PDF文档对象
+                };
+
+                // 获取PDF文档信息但不立即渲染
+                const pdfDoc = await pdfjsLib.getDocument({
+                    data: pdfInfo.arrayBuffer,
+                    workerSrc: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js'
+                }).promise;
+
+                pdfInfo.numPages = pdfDoc.numPages;
+                pdfInfo.pdfDoc = pdfDoc; // 存储PDF文档对象
+
+                loaded_pdfs.push(pdfInfo);
+                updateFileDropdown();
+
+            } catch (err) {
+                console.error('PDF加载失败：', err);
+                // 标记分隔线为错误状态
+                separator.classList.add('error');
+                throw err;
+            }
+        }
+
+        // 从本地文件加载并渲染单个PDF
+        async function loadAndRenderPdfFromFile(file) {
+            const separator = addPdfSeparator(file.name);
+
+            try {
+                const arrayBuffer = await readFileAsArrayBuffer(file);
+
+                // 存储PDF信息 - 保存ArrayBuffer的副本
+                const pdfInfo = {
+                    name: file.name,
+                    arrayBuffer: arrayBuffer.slice(0), // 创建ArrayBuffer的副本
+                    numPages: 0,
+                    separator: separator,
+                    pdfDoc: null // 存储PDF文档对象
+                };
+
+                // 获取PDF文档信息但不立即渲染
+                const pdfDoc = await pdfjsLib.getDocument({
+                    data: pdfInfo.arrayBuffer,
+                    workerSrc: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js'
+                }).promise;
+
+                pdfInfo.numPages = pdfDoc.numPages;
+                pdfInfo.pdfDoc = pdfDoc; // 存储PDF文档对象
+
+                loaded_pdfs.push(pdfInfo);
+                updateFileDropdown();
+
+            } catch (err) {
+                console.error('PDF加载失败：', err);
+                // 标记分隔线为错误状态
+                separator.classList.add('error');
+                throw err;
+            }
+        }
+
+        // 渲染PDF内容
+        async function renderPdf(pdfInfo) {
+            // 如果已经存储了PDF文档对象，直接使用
+            let pdfDoc = pdfInfo.pdfDoc;
+
+            // 如果没有存储PDF文档对象，重新创建
+            if (!pdfDoc) {
+                pdfDoc = await pdfjsLib.getDocument({
+                    data: pdfInfo.arrayBuffer,
+                    workerSrc: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js'
+                }).promise;
+            }
+
+            // 添加分隔线
+            const separator = pdfInfo.separator.cloneNode(true);
+            pdf_container.appendChild(separator);
+
+            // 创建页面容器用于双列布局
+            const pagesContainer = document.createElement('div');
+            pagesContainer.style.display = 'contents'; // 使用contents布局让子元素直接参与grid布局
+            pdf_container.appendChild(pagesContainer);
+
+            for (let pageNum = 1; pageNum <= pdfDoc.numPages; pageNum++) {
+                const page = await pdfDoc.getPage(pageNum);
+
+                // 根据布局调整缩放比例
+                const scale = current_layout === 'double' ? 1.2 : 1.6;
+                const viewport = page.getViewport({ scale: scale });
+
+                const canvas = document.createElement('canvas');
+                canvas.className = 'pdf_page';
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+                pagesContainer.appendChild(canvas);
+
+                const ctx = canvas.getContext('2d');
+                await page.render({ canvasContext: ctx, viewport: viewport }).promise;
+            }
+        }
+
+        // 辅助函数：添加分隔线
+        function addPdfSeparator(filename) {
+            const separator = document.createElement('div');
+            separator.className = 'pdf_separator';
+            separator.setAttribute('data-filename', filename);
+            return separator;
+        }
+
+        // 辅助函数：读取文件为ArrayBuffer
+        function readFileAsArrayBuffer(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = (err) => reject(err);
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        // 辅助函数：更新状态
+        function updateStatus(text, isError = false) {
+            status.textContent = text;
+            status.classList.toggle('error', isError);
+        }
+
+        // 更新文件下拉菜单
+        function updateFileDropdown() {
+            file_dropdown.innerHTML = '';
+
+            if (loaded_pdfs.length === 0) {
+                const emptyItem = document.createElement('div');
+                emptyItem.className = 'dropdown_item';
+                emptyItem.textContent = '暂无文件';
+                file_dropdown.appendChild(emptyItem);
+                return;
+            }
+
+            loaded_pdfs.forEach((pdf, index) => {
+                const item = document.createElement('div');
+                item.className = 'dropdown_item';
+                if (index === current_pdf_index) {
+                    item.classList.add('active_file');
+                }
+
+                const fileName = document.createElement('div');
+                fileName.className = 'file_name';
+                fileName.textContent = pdf.name;
+                fileName.title = pdf.name; // 添加完整名称提示
+                fileName.addEventListener('click', () => {
+                    switchToPdf(index);
+                });
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete_btn';
+                deleteBtn.textContent = '删除';
+                deleteBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    deletePdf(index);
+                });
+
+                item.appendChild(fileName);
+                item.appendChild(deleteBtn);
+                file_dropdown.appendChild(item);
+            });
+        }
+
+        // 切换到指定PDF
+        async function switchToPdf(index) {
+            if (index < 0 || index >= loaded_pdfs.length) return;
+
+            // 清空当前显示
+            pdf_container.innerHTML = '';
+
+            // 重新渲染选中的PDF
+            const pdfInfo = loaded_pdfs[index];
+
+            await renderPdf(pdfInfo);
+
+            current_pdf_index = index;
+            updateFileDropdown();
+            file_dropdown.classList.remove('show');
+
+            updateStatus(`已切换到: ${pdfInfo.name}`);
+        }
+
+        // 删除指定PDF
+        function deletePdf(index) {
+            if (index < 0 || index >= loaded_pdfs.length) return;
+
+            const pdfName = loaded_pdfs[index].name;
+            loaded_pdfs.splice(index, 1);
+
+            // 如果删除的是当前显示的PDF，清空显示
+            if (index === current_pdf_index) {
+                pdf_container.innerHTML = '';
+                current_pdf_index = -1;
+                updateStatus(`已删除: ${pdfName}`);
+
+                // 如果还有PDF文件，切换到第一个
+                if (loaded_pdfs.length > 0) {
+                    switchToPdf(0);
+                }
+            }
+
+            // 更新下拉菜单
+            updateFileDropdown();
+        }
+    </script>
+</body>
+
+</html>
